@@ -1,32 +1,31 @@
 library(tidyr)
 library(purrr)
 library(glue)
-library(tibble)
+library(PerformanceAnalytics)
 
 source('./src/datasources/datasources.R', local=TRUE)
 source('./src/shiny/shiny_utils.R', local=TRUE)
-source('./src/finance/portfolio/portfolio_reporting.R', local=TRUE)
+source('./src/finance/portfolio/portfolio.R', local=TRUE)
+source("./src/shiny/finance/portfolio/theory_server.R", local=TRUE)
 
 HOW_TO_USE =
   renderUI(includeHTML("./src/shiny/finance/portfolio/how_to_use.html"))
 
-PERFORMANCE_MEASURES =
-  renderUI(includeHTML("./src/shiny/finance/portfolio/performance_measures.html"))
-
 render_portifolio_optmisation = function(input, output, session, risk_free_choices, start_date, end_date, cache_folder) {
   react = c()
+  output$how_to_use = HOW_TO_USE
 
   # Download instruments and render selectors
   rfr = load_fred_data(risk_free_choices, start_date, end_date) %>%
-        fred_to_daily_rates()
+        fred_to_daily_rates()  %>% as.xts()
 
   react$risk_free = reactive({
-    data.frame(date=rownames(rfr), rf=rfr[[input$risk_free]])
+    rfr[,input$risk_free]
   })
 
   react$instruments = reactive({
-    if (length(input$tickers > 1))
-      load_tickers(toupper(input$tickers), start_date, end_date, cache_folder)
+    if (length(input$tickers > 2))
+      load_tickers(toupper(input$tickers), start_date, end_date, cache_folder) %>% as.xts()
   })
 
   output$benchmark = renderUI({selectizeInput("benchmark",
@@ -35,17 +34,22 @@ render_portifolio_optmisation = function(input, output, session, risk_free_choic
     selected = input$tickers[1],
     multiple = FALSE)})
 
-  # Update UI on selection changes
+  output %>%
+    monitor_instruments_selection(input, session, react, rv) %>%
+    render_theory_page(react$instruments(), react$risk_free())
+}
+
+monitor_instruments_selection = function(output, input, session, react, rv) {
   instrument_changes <- reactive({
     list(input$tickers, input$benchmark)
   })
 
   observeEvent(instrument_changes(),{
-    render_portfolio_ui(output, input, session, react)
+    if (length(input$tickers > 2))
+      render_portfolio_ui(output, input, session, react)
   })
 
-  output %>%
-    render_theory_page(react$instruments(), react$risk_free())
+  output
 }
 
 render_portfolio_ui = function(output, input, session, react, rv) {
@@ -56,6 +60,7 @@ render_portfolio_ui = function(output, input, session, react, rv) {
     return(output)
   }
 
+  # Reactive Variables
   rv = reactiveValues(selectedWeights = rep(1/ni,ni))
   names(rv$selectedWeights) = instrument_names
 
@@ -73,10 +78,12 @@ render_portfolio_ui = function(output, input, session, react, rv) {
       as.Date(input$date_range[2])))
   })
 
+  # Allocation Page
   render_sliders(input, output, session, react, rv)
   render_portifolio_returns(input, output, session, react, rv)
 
-  render_optimisation_page(input, output, session, react, rv)
+  # Comparison Page
+  render_optimised_allocations(input, output, session, react, rv)
 
   output
 }
@@ -114,55 +121,96 @@ render_portifolio_returns = function(input, output, session, react, rv) {
   # Allocation pie chart
   output$graph5 = renderPlotly({ plot_allocation_pie_chart(rv$selectedWeights) })
 
-  # Returns and metric table
-  output$graph6 = renderPlotly({ plot_returns_chart(react$bt_data()) })
+  # Returns chart
+  output$graph6 = renderPlotly({
+    react$bt_data() %>%
+    chart.CumReturns(plot.engine="plotly", geometric=TRUE, width = 700, height = 400) %>%
+    apply_plotly_styling()
+  })
 
-  output$bt_table1 = renderTable(digits =2, {
+  # Performance metrics
+  output$port_measures1 = renderTable(digits =2, rownames = TRUE, {
     calculate_performance_metrics(react$bt_data(), react$risk_free(), input$date_range[1], input$date_range[2])
+  })
+
+  output$port_measures2 = renderTable(digits =2, rownames = TRUE, {
+    calculate_risk_metrics(react$bt_data(), react$risk_free(), input$date_range[1], input$date_range[2])
   })
 }
 
-render_optimisation_page = function(input, output, session, react, rv) {
+render_optimised_allocations = function(input, output, session, react, rv) {
 
   react$opt_weights = reactive({
-    calculate_optimal_weights(react$instruments(), react$bt_data(), input$date_range[1], input$date_range[2])})
+    react$bt_data()
+    isolate(
+      calculate_optimal_weights(react$instruments(), react$bt_data(), input$date_range[1], input$date_range[2]))
+  })
 
-  # Optimised pie charts
+  react$opt_data = reactive({
+    react$opt_weights()
+    isolate(calculate_optmised_returns(
+      react$instruments(),
+      as.Date(input$date_range[1]),
+      as.Date(input$date_range[2]),
+      react$opt_weights(),
+      react$bt_data()
+      ))
+  })
+
+  # Optimised allocation pie charts
   output$graph7 = renderPlotly({
     plot_allocation_pie_chart(rv$selectedWeights) })
 
   output$graph8 = renderPlotly({
     df = react$opt_weights()
-    plot_allocation_pie_chart(df$OptRet, rownames(df)) })
+    plot_allocation_pie_chart(df$SimilarReturn, rownames(df)) })
 
   output$graph9 = renderPlotly({
     df = react$opt_weights()
-    plot_allocation_pie_chart(df$OptRisk, rownames(df)) })
+    plot_allocation_pie_chart(df$SimilarRisk, rownames(df)) })
 
-  react$opt_data = reactive({
-    opt_port(
-      react$instruments(),
-      as.Date(input$date_range[1]),
-      as.Date(input$date_range[2]),
-      react$opt_weights(),
-      react$bt_data())})
-
-  # Optimised Returns and metric table
+  # Returns Chart
   output$graph10 = renderPlotly({
-    plot_optimised_returns(react$opt_data())
+    react$opt_data() %>%
+    chart.CumReturns(plot.engine="plotly", geometric=TRUE, width = 700, height = 400) %>%
+    apply_plotly_styling()
   })
 
-  output$bt_table2 = renderTable(digits=2, {
-    calculate_optimised_metrics(react$opt_data(), react$risk_free(), input$date_range[1], input$date_range[2])
+  # Performance metrics
+  output$opt_measures1 = renderTable(digits=2, rownames = TRUE, {
+    calculate_performance_metrics(react$opt_data(), react$risk_free(), input$date_range[1], input$date_range[2])
   })
+
+  output$opt_measures2 = renderTable(digits=2, rownames = TRUE, {
+    calculate_risk_metrics(react$opt_data(), react$risk_free(), input$date_range[1], input$date_range[2])
+  })
+
 }
 
-render_theory_page = function(output, df, rf) {
-  output$how_to_use = HOW_TO_USE
-  output$measures = PERFORMANCE_MEASURES
+plot_allocation_pie_chart = function(weights, labels=names(weights)) {
 
-  output$graph1 = renderPlotly({plot_risk_return_ratios(df)})
-  output$graph2 = renderPlotly({plot_risk_return_by_years(df)})
-  output$graph3 = renderPlotly({plot_compound_returns(df)})
-  output
+    alloc = data.frame(wght = weights, asset = labels)
+
+    plot_ly(alloc, labels = ~asset, values = ~wght, type = 'pie',
+      textposition = 'inside',
+      textinfo = 'label+percent',
+      insidetextfont = list(color = '#000'),
+      hoverinfo = 'text',
+      text = ~paste(round(wght,4)*100, ' %'),
+      marker = list(line = list(color = '#FFFFFF', width = 1)), showlegend = FALSE, width=250, height=250) %>%
+      apply_plotly_styling()
+}
+
+apply_plotly_styling = function(x, pallete = rev(brewer.pal(6, "Blues")) ) {
+  layout(x,
+    xaxis = list(title = "", zeroline = T, showline = F, showgrid = F, showticklabels = T,
+      autotick = T, gridcolor="#D3D3D3"),
+    yaxis = list(title = "", zeroline = T, showline = F, showgrid = T, showticklabels = T,
+      autotick = T, gridcolor="#D3D3D3", tickformat = "%"),
+
+    colorway = pallete,
+    legend = list(orientation = "h", x = 0.1, y=1.2),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    margin = list(b = 20, l = 20, t = 30))
 }

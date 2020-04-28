@@ -1,6 +1,7 @@
 library(shinydashboard)
 
 source('./src/shiny/finance/portfolio/portfolio_ui.R', local=TRUE)
+source('./src/shiny/finance/portfolio/theory_ui.R', local=TRUE)
 
 app_layout = function(instrument_choices, instruments_selection, risk_free_choices, risk_free_selection, analisys_period) {
 

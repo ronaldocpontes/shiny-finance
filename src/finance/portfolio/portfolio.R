@@ -1,7 +1,6 @@
 library(xts)
 library(DEoptim)
 library(tseries)
-library(tibble)
 library(PerformanceAnalytics)
 
 ### Helper functions for portfolio valuation
@@ -24,14 +23,110 @@ rebalance = function(weights, change, key) {
   weights
 }
 
-# Function that calculates portfolio return/risk given mean returns of assets and a covariance matrix
+benchmark_portifolio = function(df, wght, rebalance, benchmark_column, from, to){
+  # browser()
+  instruments = df %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+  portfolio = portfolio_returns(instruments, from, to, wght, rebalance) %>% `names<-`("Portfolio")
+  portfolio$Benchmark = instruments[,benchmark_column]
+  portfolio
+}
+
+#Calculates portfolio returns
+portfolio_returns = function(df, from, to, weights, rebalance, geometric = TRUE){
+
+  instruments = df %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+
+  #Create repalace operator
+  reb_op = ifelse(rebalance=="Never", NA,
+                  ifelse(rebalance=="Annually", "years",
+                         ifelse(rebalance=="Quarterly", "quarters",
+                                "months")))
+
+  Return.portfolio(instruments, weights = weights, geometric = geometric, rebalance_on = reb_op)
+}
+
+calculate_optimal_weights = function(instruments, bt_df, from, to, scale = 252) {
+    instruments = instruments %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+    bt_df = bt_df %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+
+    #Calculate target risk and return
+    target_ret = mean(bt_df$Portfolio) * scale
+    target_risk = sd(bt_df$Portfolio) * sqrt(scale)
+
+    # Calculate inputs for optimisation
+    mean_ret = apply(instruments, 2, mean) * scale
+    cov_matrix = cov(instruments) * scale
+
+    #Find optimal weights
+    opt_w_ret = findEfficientFrontier.ReturnALT(mean_ret, cov_matrix, target_ret)
+    opt_w_risk = findEfficientFrontier.Risk(mean_ret, cov_matrix, target_risk)
+
+    #Return a dataframe
+    data.frame(SimilarReturn = opt_w_ret, SimilarRisk = opt_w_risk, row.names =  names(instruments))
+}
+
+
+# Build optimal portfolios returns
+calculate_optmised_returns = function(instruments, from, to, opt_w, port_ret){
+
+  instruments = instruments %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+  port_ret = port_ret       %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+
+  #Same return portfolio
+  port_ret$SimilarReturn  = portfolio_returns(instruments, from, to, opt_w$SimilarReturn, rebalance = "Never" , geometric = FALSE)
+  port_ret$SimilarRisk = portfolio_returns(instruments, from, to, opt_w$SimilarRisk, rebalance = "Never", geometric = FALSE)
+  port_ret
+}
+
+#Calculates portfolio performance measures
+calculate_performance_metrics = function(returns, risk_free, from, to, scale = 252) {
+    ret_df = returns %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+    rf = risk_free %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+
+    data.frame() %>%
+      rbind(CAPM.alpha(ret_df, ret_df$Benchmark, Rf = rf) * sqrt(scale)) %>%
+      rbind(CAPM.beta(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      rbind(CAPM.beta.bull(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      rbind(CAPM.beta.bear(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      rbind(InformationRatio(ret_df, ret_df$Benchmark, scale)) %>%
+      rbind(SharpeRatio(ret_df, Rf = rf, p = 0.95, method="modified")) %>%
+      rbind(SortinoRatio(ret_df, MAR=0) * sqrt(scale)) %>%
+      rbind(SortinoRatio(ret_df, MAR=ret_df$Benchmark) * sqrt(scale)) %>%
+      rbind(CalmarRatio(ret_df, scale=scale)) %>%
+      rbind(SterlingRatio(ret_df, scale=scale, excess = 0.1)) %>%
+      rbind(TreynorRatio(ret_df, ret_df$Benchmark, Rf = rf, scale = scale, modified = T) %>%
+        `rownames<-`("Modified Treynor Ratio"))
+}
+
+#Calculates portfolio performance measures
+calculate_risk_metrics = function(returns, risk_free, from, to, scale = 252) {
+    ret_df = returns %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+    rf = risk_free %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
+
+    # browser()
+    data.frame() %>%
+      rbind(TotalRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
+      rbind(SpecificRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
+      rbind(SystematicRisk(ret_df, ret_df$Benchmark))  %>%
+      rbind(maxDrawdown(ret_df))  %>%
+      rbind(AverageDrawdown(ret_df))  %>%
+      rbind(VaR(ret_df, p = 0.95, method="modified") %>% `rownames<-`("Modified VaR") * sqrt(scale))  %>%
+      rbind(VaR(ret_df, p = 0.95, method="historical") %>% `rownames<-`("Historical VaR") * sqrt(scale))  %>%
+      rbind(VaR(ret_df, p = 0.95, method="gaussian") %>% `rownames<-`("Gaussian VaR") * sqrt(scale)) %>%
+      rbind(ES(ret_df, p = 0.95, method="modified") %>% `rownames<-`("Modified Expected Shortfall") * sqrt(scale))  %>%
+      rbind(ES(ret_df, p = 0.95, method="historical") %>% `rownames<-`("Historical Expected Shortfall") * sqrt(scale))  %>%
+      rbind(ES(ret_df, p = 0.95, method="gaussian") %>% `rownames<-`("Gaussian Expected Shortfall") * sqrt(scale)) %>%
+      rbind(SkewnessKurtosisRatio(ret_df))
+}
+
+# Calculates portfolio return/risk given mean returns of assets and a covariance matrix
 calcPortPerformance = function(weights, mean_ret, cov_matrix){
   portRet =  t(weights) %*% mean_ret
   portRisk =  sqrt(t(weights) %*% (cov_matrix %*% weights))
   return (list(portRet, portRisk))
 }
 
-## Function that simulates portfolio risk/return given mean returns of assets and a covariance matrix
+## Cimulates portfolio risk/return given mean returns of assets and a covariance matrix
 simPortfolios = function(mean_ret, cov_matrix, nsim=10000){
 
     n_assets = length(mean_ret) #Get number of assets
@@ -53,12 +148,13 @@ simPortfolios = function(mean_ret, cov_matrix, nsim=10000){
     return (result)
 }
 
-## Function that finds weights of assets on the efficient frontier
+## Finds weights of assets on the efficient frontier
+
 # By target return
-findEfficientFrontier.Return = function(returns, target_ret, short = FALSE){
+findEfficientFrontier.Return = function(returns, target_ret, short = FALSE, scale = 252){
 
     #Calculate optimal weights
-    opt.weights = portfolio.optim(returns, pm=target_ret/250, shorts = short)$pw
+    opt.weights = portfolio.optim(returns, pm=target_ret/scale, shorts = short)$pw
 
     if (short == FALSE){
       opt.weights = pmax(opt.weights, 0) #Correct approximation error
@@ -130,77 +226,4 @@ findEfficientFrontier.ReturnALT = function(mean_ret, cov_matrix, target_ret){
 
   opt_w = out$optim$bestmem
   opt_w/sum(opt_w) #Sum up to 1
-}
-
-#Function that calculates portfolio returns
-calcPortReturn = function(df, from, to, weights, rebalance, geometric = TRUE){
-  #Cut dataframe to reflect date range
-  df_range = df %>% drop_na() %>% rownames_to_column("date") %>%
-    filter(as.Date(date)>=from & as.Date(date) <= to) %>% column_to_rownames("date")
-
-  df_range = xts(df_range, order.by = as.Date(row.names(df_range)))
-  tclass(df_range) <- "Date"
-
-  #Create repalace operator
-  reb_op = ifelse(rebalance=="Never", NA,
-                  ifelse(rebalance=="Annually", "years",
-                  ifelse(rebalance=="Quarterly", "quarters",
-                         "months")))
-
-  Return.portfolio(df_range,
-    weights = weights, geometric = geometric,rebalance_on = reb_op) %>%
-    data.frame()
-}
-
-#### Function to find optimal portfolios
-opt_port = function(df, from, to, opt_w, port_ret){
-
-  #Get portfolio  returns
-  port_ret = port_ret %>% select(date, Portfolio, Benchmark)
-
-  df_tmp = df %>% rownames_to_column("date") %>%
-    filter(as.Date(date)>=from & as.Date(date) <= to) %>% column_to_rownames("date")
-
-  #Same return portfolio
-  opt_ret = data.frame(calcPortReturn(df_tmp, from, to, opt_w$OptRet, rebalance = "Never" , geometric = FALSE))
-  opt_ret$date = as.Date(row.names(opt_ret))
-
-  #Same risk portfolio
-  opt_risk = data.frame(calcPortReturn(df_tmp, from, to, opt_w$OptRisk, rebalance = "Never", geometric = FALSE))
-  opt_risk$date = as.Date(row.names(opt_risk))
-
-
-  #Combine into one dataframe
-  port_ret = merge(port_ret, opt_ret, by = "date", all.x = TRUE)
-  port_ret = merge(port_ret, opt_risk, by = "date", all.x = TRUE)
-  port_ret$date = as.Date(port_ret$date)
-
-  #Change names
-  colnames(port_ret) = c("date","Portfolio","Benchmark" , "OptRet","OptRisk")
-
-  return(port_ret)
-}
-
-#Function that calculates portfolio performance measures
-
-calcPortMeasures = function (port_ret, benchmark, rf){
-  mean_rf = mean(rf)
-  mean_port_ret = mean(port_ret)
-  sd_port_ret = sd(port_ret)
-
-  #Calculate Sharpe
-  sharpe = ((mean_port_ret - mean_rf) / sd_port_ret) * sqrt(250)
-
-  #Calculate Beta
-  mod = lm(formula = port_ret~benchmark)
-  beta = summary(mod)$coefficients[2,1]
-
-  #Calculate Sortino
-  sortino = SortinoRatio(port_ret) * sqrt(250)
-
-  #Calculate Taylor
-  treynor = ((mean_port_ret - mean_rf)*250)*100/beta
-
-  list("AvRet"=mean_port_ret * 250, "StDev" = sd_port_ret * sqrt(250),
-                 "Sharpe" = sharpe, "Sortino" = sortino[1], "Beta" = beta, "Treynor" = treynor)
 }
