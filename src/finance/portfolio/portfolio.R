@@ -24,7 +24,6 @@ rebalance = function(weights, change, key) {
 }
 
 benchmark_portifolio = function(df, wght, rebalance, benchmark_column, from, to){
-  # browser()
   instruments = df %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
   portfolio = portfolio_returns(instruments, from, to, wght, rebalance) %>% `names<-`("Portfolio")
   portfolio$Benchmark = instruments[,benchmark_column]
@@ -84,18 +83,19 @@ calculate_performance_metrics = function(returns, risk_free, from, to, scale = 2
     rf = risk_free %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
 
     data.frame() %>%
-      rbind(CAPM.alpha(ret_df, ret_df$Benchmark, Rf = rf) * sqrt(scale)) %>%
-      rbind(CAPM.beta(ret_df, ret_df$Benchmark, Rf = rf)) %>%
-      rbind(CAPM.beta.bull(ret_df, ret_df$Benchmark, Rf = rf)) %>%
-      rbind(CAPM.beta.bear(ret_df, ret_df$Benchmark, Rf = rf)) %>%
-      rbind(InformationRatio(ret_df, ret_df$Benchmark, scale)) %>%
-      rbind(SharpeRatio(ret_df, Rf = rf, p = 0.95, method="modified")) %>%
-      rbind(SortinoRatio(ret_df, MAR=0) * sqrt(scale)) %>%
-      rbind(SortinoRatio(ret_df, MAR=ret_df$Benchmark) * sqrt(scale)) %>%
-      rbind(CalmarRatio(ret_df, scale=scale)) %>%
-      rbind(SterlingRatio(ret_df, scale=scale, excess = 0.1)) %>%
+      # rbind(CAPM.alpha(ret_df, ret_df$Benchmark, Rf = rf) * sqrt(scale)) %>%
+      # rbind(CAPM.beta(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      # rbind(CAPM.beta.bull(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      # rbind(CAPM.beta.bear(ret_df, ret_df$Benchmark, Rf = rf)) %>%
+      rbind(InformationRatio(ret_df, ret_df$Benchmark, scale = scale)) %>%
+      rbind(SharpeRatio.annualized(ret_df, Rf = rf, scale = scale)) %>%
+      rbind(SortinoRatio(ret_df, MAR=ret_df$Benchmark)) %>%
+      # rbind(CalmarRatio(ret_df, scale=scale)) %>%
+      # rbind(SterlingRatio(ret_df, scale=scale, excess = 0.1)) %>%
       rbind(TreynorRatio(ret_df, ret_df$Benchmark, Rf = rf, scale = scale, modified = T) %>%
-        `rownames<-`("Modified Treynor Ratio"))
+        `rownames<-`("Modified Treynor Ratio")) %>%
+      rbind(Omega(ret_df, ret_df$Benchmark, Rf = rf, method="simple"))
+
 }
 
 #Calculates portfolio performance measures
@@ -103,20 +103,16 @@ calculate_risk_metrics = function(returns, risk_free, from, to, scale = 252) {
     ret_df = returns %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
     rf = risk_free %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
 
-    # browser()
     data.frame() %>%
-      rbind(TotalRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
-      rbind(SpecificRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
-      rbind(SystematicRisk(ret_df, ret_df$Benchmark))  %>%
+      # rbind(TotalRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
+      # rbind(SpecificRisk(ret_df, ret_df$Benchmark, Rf = rf))  %>%
+      # rbind(SystematicRisk(ret_df, ret_df$Benchmark)) c
+      # rbind(SkewnessKurtosisRatio(ret_df)) %>%
       rbind(maxDrawdown(ret_df))  %>%
-      rbind(AverageDrawdown(ret_df))  %>%
       rbind(VaR(ret_df, p = 0.95, method="modified") %>% `rownames<-`("Modified VaR") * sqrt(scale))  %>%
       rbind(VaR(ret_df, p = 0.95, method="historical") %>% `rownames<-`("Historical VaR") * sqrt(scale))  %>%
-      rbind(VaR(ret_df, p = 0.95, method="gaussian") %>% `rownames<-`("Gaussian VaR") * sqrt(scale)) %>%
       rbind(ES(ret_df, p = 0.95, method="modified") %>% `rownames<-`("Modified Expected Shortfall") * sqrt(scale))  %>%
-      rbind(ES(ret_df, p = 0.95, method="historical") %>% `rownames<-`("Historical Expected Shortfall") * sqrt(scale))  %>%
-      rbind(ES(ret_df, p = 0.95, method="gaussian") %>% `rownames<-`("Gaussian Expected Shortfall") * sqrt(scale)) %>%
-      rbind(SkewnessKurtosisRatio(ret_df))
+      rbind(ES(ret_df, p = 0.95, method="historical") %>% `rownames<-`("Historical Expected Shortfall") * sqrt(scale))
 }
 
 # Calculates portfolio return/risk given mean returns of assets and a covariance matrix
