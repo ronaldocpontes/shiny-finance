@@ -20,7 +20,7 @@ shinyApp(
   ui = app_layout(INSTRUMENTS, INITIAL_SELECTION, RISK_FREE_RATES, RISK_FREE, ANALYSIS_PERIOD),
 
   server = function(input, output, session) {
-    render_portifolio_optmisation(input, output, session, RISK_FREE_RATES, START_DATE, END_DATE, CACHE_FOLDER)
+    render_portfolio_optmisation(input, output, session, RISK_FREE_RATES, START_DATE, END_DATE, CACHE_FOLDER)
     output$author = AUTHOR_PAGE
     output$disclaimer = DISCLAIMER_PAGE
   }

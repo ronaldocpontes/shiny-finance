@@ -18,8 +18,8 @@ render_theory_page = function(output, df, rf) {
 }
 
 plot_risk_return_ratios = function(df) {
-  mean_ret = apply(df, 2, mean) * 250
-  sd_ret = apply(df, 2, sd) * sqrt(250)
+  mean_ret = apply(df, 2, mean) * 252
+  sd_ret = apply(df, 2, sd) * sqrt(252)
 
   df1 = data.frame(Asset = colnames(df), Return = mean_ret, Risk = sd_ret)
 
@@ -78,8 +78,8 @@ plot_compound_returns = function(df) {
 }
 
 plot_efficient_frontier = function(returns, rf) {
-  mean_ret = apply(returns, 2, mean) * 250
-  cov_matrix = cov(returns) * 250
+  mean_ret = apply(returns, 2, mean) * 252
+  cov_matrix = cov(returns) * 252
 
   sim_port = simPortfolios(mean_ret, cov_matrix, nsim=10000)
 

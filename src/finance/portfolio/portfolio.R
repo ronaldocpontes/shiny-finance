@@ -23,7 +23,7 @@ rebalance = function(weights, change, key) {
   weights
 }
 
-benchmark_portifolio = function(df, wght, rebalance, benchmark_column, from, to){
+benchmark_portfolio = function(df, wght, rebalance, benchmark_column, from, to){
   instruments = df %>% as.xts() %>% .[index(.) >= from & index(.) <= to]
   portfolio = portfolio_returns(instruments, from, to, wght, rebalance) %>% `names<-`("Portfolio")
   portfolio$Benchmark = instruments[,benchmark_column]

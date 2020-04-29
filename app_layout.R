@@ -26,8 +26,7 @@ dashboard_Sidebar = function(width) {
       menuItem("Theory", tabName = "theory", icon = icon("graduation-cap"),
                menuSubItem("How to use the App", tabName = "how_to_use", icon = icon("book")),
                menuSubItem("Risk/Return Ratio", tabName = "risk_return_theory"),
-               menuSubItem("Optimal Portfolio", tabName = "efficient_frontier_theory"),
-               menuSubItem("Performance Measures", tabName = "performance_measures")
+               menuSubItem("Optimal Portfolio", tabName = "efficient_frontier_theory")
                ),
       menuItem("The Author", tabName = "author", icon = icon("user")),
       menuItem("Disclaimers", tabName = "discl", icon = icon("exclamation-triangle")))
@@ -46,7 +45,6 @@ dashboard_body = function(instrument_choices, instruments_selection, risk_free_c
       tabItem(tabName = "how_to_use",                  portfolio_app_how_to_use_ui() ),
       tabItem(tabName = "risk_return_theory",          portfolio_risk_return_theory_ui() ),
       tabItem(tabName = "efficient_frontier_theory",   portfolio_efficient_frontier_theory_ui() ),
-      tabItem(tabName = "performance_measures",        portfolio_performance_measures_ui() ),
 
       tabItem(tabName = "author",                      htmlOutput("author")),
       tabItem(tabName = "discl",                       htmlOutput("disclaimer")))

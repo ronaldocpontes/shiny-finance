@@ -1,3 +1,4 @@
+library(RColorBrewer)
 library(tidyr)
 library(purrr)
 library(glue)
@@ -11,7 +12,11 @@ source("./src/shiny/finance/portfolio/theory_server.R", local=TRUE)
 HOW_TO_USE =
   renderUI(includeHTML("./src/shiny/finance/portfolio/how_to_use.html"))
 
-render_portifolio_optmisation = function(input, output, session, risk_free_choices, start_date, end_date, cache_folder) {
+PALLETE = rev(brewer.pal(6, "Blues"))
+
+PERFORMANCE_CHART_METHODS = c("ModifiedVaR","ModifiedES")
+
+render_portfolio_optmisation = function(input, output, session, risk_free_choices, start_date, end_date, cache_folder) {
   react = c()
   output$how_to_use = HOW_TO_USE
 
@@ -69,7 +74,7 @@ render_portfolio_ui = function(output, input, session, react, rv) {
     input$date_range
     input$rebalance
 
-    isolate(benchmark_portifolio(
+    isolate(benchmark_portfolio(
       react$instruments(),
       rv$selectedWeights,
       input$rebalance,
@@ -80,7 +85,7 @@ render_portfolio_ui = function(output, input, session, react, rv) {
 
   # Allocation Page
   render_sliders(input, output, session, react, rv)
-  render_portifolio_returns(input, output, session, react, rv)
+  render_portfolio_returns(input, output, session, react, rv)
 
   # Comparison Page
   render_optimised_allocations(input, output, session, react, rv)
@@ -116,7 +121,7 @@ render_sliders = function(input, output, session, react, rv) {
   })
 }
 
-render_portifolio_returns = function(input, output, session, react, rv) {
+render_portfolio_returns = function(input, output, session, react, rv) {
 
   # Allocation pie chart
   output$graph5 = renderPlotly({ plot_allocation_pie_chart(rv$selectedWeights) })
@@ -124,7 +129,7 @@ render_portifolio_returns = function(input, output, session, react, rv) {
   # Returns chart
   output$graph6 = renderPlotly({
     react$bt_data() %>%
-    chart.CumReturns(plot.engine="plotly", geometric=TRUE, width = 700, height = 400) %>%
+    charts.PerformanceSummary(Rf = react$risk_free(), geometric=TRUE, p=.95, plot.engine="plotly", colors=PALLETE) %>%
     apply_plotly_styling()
   })
 
@@ -172,7 +177,7 @@ render_optimised_allocations = function(input, output, session, react, rv) {
   # Returns Chart
   output$graph10 = renderPlotly({
     react$opt_data() %>%
-    chart.CumReturns(plot.engine="plotly", geometric=TRUE, width = 700, height = 400) %>%
+    charts.PerformanceSummary(Rf = react$risk_free(), geometric=TRUE, p=.95, plot.engine="plotly", colors=PALLETE) %>%
     apply_plotly_styling()
   })
 
@@ -201,7 +206,7 @@ plot_allocation_pie_chart = function(weights, labels=names(weights)) {
       apply_plotly_styling()
 }
 
-apply_plotly_styling = function(x, pallete = rev(brewer.pal(6, "Blues")) ) {
+apply_plotly_styling = function(x, pallete = PALLETE) {
   layout(x,
     xaxis = list(title = "", zeroline = T, showline = F, showgrid = F, showticklabels = T,
       autotick = T, gridcolor="#D3D3D3"),

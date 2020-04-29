@@ -13,7 +13,7 @@ The App is running from
  - app_layout.R              define the overall app UI structure and import other UI modules
  - src
   - finance                  standalone financial functions
-  - shiny/finance/porfolio   reactive shine module for portifolio allocation and optimisation
+  - shiny/finance/porfolio   reactive shine module for portfolio allocation and optimisation
  - html                      static html pages
  - www                       static web assets
  - data                      cache folder for downloaded data
